@@ -11,6 +11,12 @@ int main(int argc, char** argv) {
     // 1. Load data - MODIFY THIS PATH!
     std::string base_path = "/home/leonardo/asrl3.utias.utoronto.ca/MRCLAM1/MRCLAM_Dataset1/";
     DataLoader loader;
+
+    // Tabella barcode -> ID soggetto
+    if(!loader.loadBarcodes(base_path + "Barcodes.dat")) {
+        RCLCPP_ERROR(node->get_logger(), "Failed to load barcodes!");
+        return 1;
+    }
     
     // Load landmarks
     if(!loader.loadLandmarkGroundtruth(base_path + "Landmark_Groundtruth.dat")) {
@@ -57,9 +63,7 @@ int main(int argc, char** argv) {
             if constexpr (std::is_same_v<T, OdometryData>) {
                 ekf.predict(e, dt);
             } else if constexpr (std::is_same_v<T, MeasurementData>) {
-                if(e.subject_id > 0) { // Only landmarks
-                    ekf.correct(e);
-                }
+                ekf.correct(e);
             }
         }, event);
         
@@ -68,14 +72,14 @@ int main(int argc, char** argv) {
         
         // Print every 100 events
         if(processed % 100 == 0) {
-            ekf.printState(node->get_logger());
+            ekf.printState(node->get_logger(), t);
             ekf.printUncertainty(node->get_logger());
         }
     }
     
     // Final state
     RCLCPP_INFO(node->get_logger(), "Final state:");
-    ekf.printState(node->get_logger());
+    ekf.printState(node->get_logger(), last_time);
     ekf.printUncertainty(node->get_logger());
     
     RCLCPP_INFO(node->get_logger(), "Processing completed!");

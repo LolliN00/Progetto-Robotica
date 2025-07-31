@@ -16,6 +16,8 @@ EkfCentralized::EkfCentralized(int num_robots, const Eigen::VectorXd& initial_st
     // Measurement noise (tune these values)
     R_landmark_ = (Eigen::Matrix2d() << 0.1,  0,
                                         0,    0.05).finished();
+    R_robot_ = (Eigen::Matrix2d() << 0.1, 0,
+                                   0,   0.05).finished();
 }
 
 void EkfCentralized::setLandmarks(const std::map<int, Landmark>& landmarks) {
@@ -52,81 +54,116 @@ void EkfCentralized::predict(const OdometryData& odom, double dt) {
 
 bool EkfCentralized::validateMeasurement(const MeasurementData& meas, double mahalanobis_threshold) {
     if(meas.subject_id <= 0) return false;
-    
-    int idx = (meas.observer_id - 1) * 3;
-    Eigen::Vector3d state = state_.segment<3>(idx);
-    auto it = landmark_map_.find(meas.subject_id);
-    if(it == landmark_map_.end()) return false;
 
-    // Expected measurement
-    Eigen::Vector2d landmark = it->second.pos;
-    double dx = landmark[0] - state[0];
-    double dy = landmark[1] - state[1];
-    double range = sqrt(dx*dx + dy*dy);
-    double bearing = atan2(dy, dx) - state[2];
-    bearing = normalize_angle(bearing);
-    Eigen::Vector2d z_pred(range, bearing);
+    int observer_idx = (meas.observer_id - 1) * 3;
+    Eigen::Vector3d obs = state_.segment<3>(observer_idx);
 
-    // Measurement residual
+    Eigen::Vector2d z_pred;
+    Eigen::MatrixXd H;
+    Eigen::Matrix2d R;
+
+    if(meas.subject_id > num_robots_) {
+        auto it = landmark_map_.find(meas.subject_id);
+        if(it == landmark_map_.end()) return false;
+        Eigen::Vector2d landmark = it->second.pos;
+        double dx = landmark[0] - obs[0];
+        double dy = landmark[1] - obs[1];
+        double range = sqrt(dx*dx + dy*dy);
+        double bearing = atan2(dy, dx) - obs[2];
+        bearing = normalize_angle(bearing);
+        z_pred << range, bearing;
+        H = Eigen::MatrixXd::Zero(2, num_robots_*3);
+        H.block<2,3>(0, observer_idx) << -dx/range, -dy/range, 0,
+                                         dy/(range*range), -dx/(range*range), -1;
+        R = R_landmark_;
+    } else if(meas.subject_id != meas.observer_id) {
+        int subject_idx = (meas.subject_id - 1) * 3;
+        Eigen::Vector3d sub = state_.segment<3>(subject_idx);
+        double dx = sub[0] - obs[0];
+        double dy = sub[1] - obs[1];
+        double range = sqrt(dx*dx + dy*dy);
+        double bearing = atan2(dy, dx) - obs[2];
+        bearing = normalize_angle(bearing);
+        z_pred << range, bearing;
+        H = Eigen::MatrixXd::Zero(2, num_robots_*3);
+        H.block<2,3>(0, observer_idx) << -dx/range, -dy/range, 0,
+                                         dy/(range*range), -dx/(range*range), -1;
+        H.block<2,3>(0, subject_idx) << dx/range, dy/range, 0,
+                                       -dy/(range*range), dx/(range*range), 0;
+        R = R_robot_;
+    } else {
+        return false;
+    }
+
     Eigen::Vector2d z(meas.range, meas.bearing);
     Eigen::Vector2d dz = z - z_pred;
     dz[1] = normalize_angle(dz[1]);
 
-    // Jacobian
-    Eigen::Matrix<double, 2, 3> H;
-    H << -dx/range, -dy/range, 0,
-         dy/(range*range), -dx/(range*range), -1;
-
-    // Innovation covariance
-    Eigen::Matrix2d S = H * P_.block<3,3>(idx, idx) * H.transpose() + R_landmark_;
-    
-    // Mahalanobis distance check
+    Eigen::Matrix2d S = H * P_ * H.transpose() + R;
     double mahalanobis = sqrt(dz.transpose() * S.inverse() * dz);
     return mahalanobis < mahalanobis_threshold;
 }
 
 void EkfCentralized::correct(const MeasurementData& meas) {
     if(!validateMeasurement(meas)) return;
-    
-    int idx = (meas.observer_id - 1) * 3;
-    Eigen::Vector3d state = state_.segment<3>(idx);
-    Eigen::Vector2d landmark = landmark_map_[meas.subject_id].pos;
-    
-    // Expected measurement
-    double dx = landmark[0] - state[0];
-    double dy = landmark[1] - state[1];
-    double range = sqrt(dx*dx + dy*dy);
-    double bearing = atan2(dy, dx) - state[2];
-    bearing = normalize_angle(bearing);
-    Eigen::Vector2d z_pred(range, bearing);
 
-    // Measurement residual
+    int state_size = num_robots_ * 3;
+    int obs_idx = (meas.observer_id - 1) * 3;
+
+    Eigen::VectorXd z_pred(2);
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(2, state_size);
+    Eigen::Matrix2d R;
+
+    if(meas.subject_id > num_robots_) {
+        Eigen::Vector3d obs = state_.segment<3>(obs_idx);
+        Eigen::Vector2d landmark = landmark_map_[meas.subject_id].pos;
+        double dx = landmark[0] - obs[0];
+        double dy = landmark[1] - obs[1];
+        double range = std::sqrt(dx*dx + dy*dy);
+        double bearing = std::atan2(dy, dx) - obs[2];
+        bearing = normalize_angle(bearing);
+        z_pred << range, bearing;
+        H.block<2,3>(0, obs_idx) << -dx/range, -dy/range, 0,
+                                   dy/(range*range), -dx/(range*range), -1;
+        R = R_landmark_;
+    } else {
+        int sub_idx = (meas.subject_id - 1) * 3;
+        Eigen::Vector3d obs = state_.segment<3>(obs_idx);
+        Eigen::Vector3d sub = state_.segment<3>(sub_idx);
+        double dx = sub[0] - obs[0];
+        double dy = sub[1] - obs[1];
+        double range = std::sqrt(dx*dx + dy*dy);
+        double bearing = std::atan2(dy, dx) - obs[2];
+        bearing = normalize_angle(bearing);
+        z_pred << range, bearing;
+        H.block<2,3>(0, obs_idx) << -dx/range, -dy/range, 0,
+                                   dy/(range*range), -dx/(range*range), -1;
+        H.block<2,3>(0, sub_idx) << dx/range, dy/range, 0,
+                                   -dy/(range*range), dx/(range*range), 0;
+        R = R_robot_;
+    }
+
     Eigen::Vector2d z(meas.range, meas.bearing);
     Eigen::Vector2d dz = z - z_pred;
     dz[1] = normalize_angle(dz[1]);
 
-    // Jacobian
-    Eigen::Matrix<double, 2, 3> H;
-    H << -dx/range, -dy/range, 0,
-         dy/(range*range), -dx/(range*range), -1;
+    Eigen::Matrix2d S = H * P_ * H.transpose() + R;
+    Eigen::MatrixXd K = P_ * H.transpose() * S.inverse();
 
-    // Kalman gain
-    Eigen::Matrix2d S = H * P_.block<3,3>(idx, idx) * H.transpose() + R_landmark_;
-    Eigen::Matrix<double, 3, 2> K = P_.block<3,3>(idx, idx) * H.transpose() * S.inverse();
+    state_ += K * dz;
+    for(int r = 0; r < num_robots_; ++r) {
+        state_[3*r + 2] = normalize_angle(state_[3*r + 2]);
+    }
 
-    // State update
-    state_.segment<3>(idx) += K * dz;
-    state_[idx+2] = normalize_angle(state_[idx+2]);
-    
-    // Covariance update (Joseph form for stability)
-    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
-    P_.block<3,3>(idx, idx) = (I - K * H) * P_.block<3,3>(idx, idx) * (I - K * H).transpose() + K * R_landmark_ * K.transpose();
-    
+    Eigen::MatrixXd I = Eigen::MatrixXd::Identity(state_size, state_size);
+    P_ = (I - K * H) * P_ * (I - K * H).transpose() + K * R * K.transpose();
+
     last_correction_time_ = meas.timestamp;
 }
 
-void EkfCentralized::printState(rclcpp::Logger logger) const {
+void EkfCentralized::printState(rclcpp::Logger logger, double timestamp) const {
     std::stringstream ss;
+    ss << "\nTime " << std::fixed << std::setprecision(3) << timestamp;
     ss << "\nCurrent state:";
     for(int i = 0; i < num_robots_; ++i) {
         ss << "\nRobot " << i+1 << ": "
