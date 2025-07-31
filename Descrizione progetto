@@ -1,0 +1,47 @@
+Titolo: Localizzazione Cooperativa Multi-robot basata su EKF
+
+Descrizione:
+Lo scopo del progetto è lo sviluppo di due versioni di un localizzatore
+basato su EKF per gruppi di robot.
+Un robot può compiere due tipi di osservazioni: landmark e osservazione
+della posizione (eventualmente la posa) di un altro robot.
+Sono possibili almeno due tipi di approcci.
+1) Localizzatore EKF centralizzato (EKF-cent)
+    Lo stato è costituito dal prodotto cartesiano degli stati dei robot,
+che corrispondono ciascuno ai tre parametri di posizione e orientamento.
+    L'algoritmo opera come un normale EKF con l'aggiornamento di
+ciascuno stato in fase di predizione, quando riceve un dato di
+odometria, e di correzione.
+    La correzione può riguardare una singola variabile di stato o due
+variabili in caso di misura robot-robot.
+2) Localizzatore EKF distribuito (EKF-dist).
+    Assomiglia al localizzatore singolo eccetto che per la gestione
+delle misure robot-robot.
+    Un modo per gestirle è tramite l'approccio basato su covariance
+intersection (CI) descritta in:
+    L. C. Carrillo-Arce, E. D. Nerurkar, J. L. Gordillo and S. I.
+Roumeliotis, "Decentralized multi-robot cooperative localization using
+covariance intersection", IROS 2013
+
+Risorse:
+Dataset UTIAS https://eur01.safelinks.protection.outlook.com/?url=http%3A%2F%2Fasrl.utias.utoronto.ca%2Fdatasets%2Fmrclam%2Findex.html&data=05%7C02%7Clorenzo.nobili%40studenti.unipr.it%7C988c242ebb5346529e8508ddce9f9d60%7Cbb064bc5b7a841ecbabed7beb3faeb1c%7C0%7C0%7C638893907138600854%7CUnknown%7CTWFpbGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIkFOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=ilXy%2B9F6PKkFmm98P75xvr5z0L3qNDTrR5y%2BJM2tjfk%3D&reserved=0
+Contiene file con misure e grountruth di ogni singolo robot.
+
+Svolgimento:
+- Scrivere due classi distinte per i due algoritmi. Per l'algebra
+lineare conviene usare Eigen.
+   EKF-dist richiede anche metodi per il passaggio di dati tra due EKF
+individuali.
+   Fare in modo che le associazioni possano essere date (es. label
+UTIAS) oppure  da calcolare
+- Attenzione: i dati possono essere ricevuti e gestiti in modo asincrono
+tra i vari robot.
+   Es. l'odometria del robot 0 può essere ricevuta in un dato istante
+temporale diverso da quello dell'odometria di un altro robot.
+- Scrivere un'applicazione che legga i file del dataset UTIAS e fornisca
+in modo ordinato i dati in base al timestamp alla classe opportuna.
+- Scrivere nodi ROS. EKF-cent richiede un unico nodo ROS che si
+sottoscrive ai topic /odom, /landmark, /robot (questi ultimi con
+messaggi custom o adattando un tipo messaggio).
+   EKF-dist sarà un nodo con più istanze, una per ciascun robot, e con
+topic per la comunicazione tra nodi.
