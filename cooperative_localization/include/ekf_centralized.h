@@ -16,7 +16,7 @@ public:
     
     const Eigen::VectorXd& getState() const { return state_; }
     const Eigen::MatrixXd& getCovariance() const { return P_; }
-    void printState(rclcpp::Logger logger) const;
+    void printState(rclcpp::Logger logger, double timestamp) const;
     void printUncertainty(rclcpp::Logger logger) const;
     void setState(const Eigen::VectorXd& new_state);
 
@@ -28,6 +28,7 @@ private:
     Eigen::MatrixXd P_;
     Eigen::MatrixXd Q_;
     Eigen::MatrixXd R_landmark_;
+    Eigen::MatrixXd R_robot_;
     
     int num_robots_;
     std::map<int, Landmark> landmark_map_;

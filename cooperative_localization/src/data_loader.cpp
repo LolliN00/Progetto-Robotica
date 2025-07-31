@@ -8,6 +8,27 @@ bool EventComparator::operator()(const Event& a, const Event& b) const {
     return get_timestamp(a) < get_timestamp(b);
 }
 
+bool DataLoader::loadBarcodes(const std::string& filename) {
+    std::ifstream file(filename);
+    if(!file.is_open()) {
+        std::cerr << "Errore: Impossibile aprire il file dei barcode: " << filename << std::endl;
+        return false;
+    }
+
+    std::string line;
+    while(std::getline(file, line) && line.find('#') != std::string::npos);
+
+    do {
+        if(line.empty()) continue;
+        std::stringstream ss(line);
+        int subject, barcode;
+        ss >> subject >> barcode;
+        barcode_to_subject_[barcode] = subject;
+    } while(std::getline(file, line));
+
+    return true;
+}
+
 bool DataLoader::loadLandmarkGroundtruth(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -68,7 +89,10 @@ bool DataLoader::loadMeasurements(const std::string& filename, int robot_id) {
         std::stringstream ss(line);
         MeasurementData meas;
         meas.observer_id = robot_id;
-        ss >> meas.timestamp >> meas.subject_id >> meas.range >> meas.bearing;
+        int barcode;
+        ss >> meas.timestamp >> barcode >> meas.range >> meas.bearing;
+        auto it = barcode_to_subject_.find(barcode);
+        meas.subject_id = (it != barcode_to_subject_.end()) ? it->second : barcode;
         event_queue.emplace_back(meas);
     } while (std::getline(file, line));
 

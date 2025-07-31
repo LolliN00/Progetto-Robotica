@@ -54,6 +54,9 @@ public:
     // Carica la mappa dei landmark
     bool loadLandmarkGroundtruth(const std::string& filename);
 
+    // Carica la tabella che associa barcode a ID di soggetto
+    bool loadBarcodes(const std::string& filename);
+
     // Carica i dati di odometria per un dato robot
     bool loadOdometry(const std::string& filename, int robot_id);
 
@@ -69,6 +72,7 @@ public:
 private:
     std::vector<Event> event_queue;
     std::map<int, Landmark> landmark_map;
+    std::map<int, int> barcode_to_subject_;
 };
 
 #endif // DATA_LOADER_H
